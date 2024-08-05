@@ -5,7 +5,6 @@ import threading
 import shutil
 from tqdm import tqdm
 import curses
-from multiprocessing import Pool, Manager
 
 def get_usb_devices():
     devices = []
@@ -18,48 +17,53 @@ def get_usb_devices():
                 devices.append(f"/dev/{name}")
     return devices
 
-def copy_with_progress(src, dst, total_size, queue):
-    copied = 0
+def copy_with_progress(src, dst, progress_bar):
+    total_size = os.path.getsize(src)
+    progress_bar.reset(total=total_size)
+
     with open(src, 'rb') as fsrc, open(dst, 'wb') as fdst:
+        copied = 0
         while True:
-            buf = fsrc.read(1024 * 1024 * 16)  # 16MB buffer size
+            buf = fsrc.read(1024 * 1024)
             if not buf:
                 break
             fdst.write(buf)
             copied += len(buf)
-            queue.put(len(buf))  # Send the amount of data copied to the queue
-    queue.put(total_size - copied)  # Ensure progress bar completes
+            progress_bar.update(len(buf))
+    progress_bar.n = total_size
+    progress_bar.refresh()
 
-def clone_drive(image, target, total_size):
+def clone_drive(image, target, progress_bars, lock):
     try:
-        queue = Manager().Queue()
-        pbar = tqdm(total=total_size, unit='B', unit_scale=True, desc=target)
-
-        def update_progress_bar(q, pbar):
-            while True:
-                chunk = q.get()
-                if chunk is None:
-                    break
-                pbar.update(chunk)
-
-        thread = threading.Thread(target=update_progress_bar, args=(queue, pbar))
-        thread.start()
-
-        copy_with_progress(image, target, total_size, queue)
-        queue.put(None)  # Signal the progress bar to finish
-        thread.join()
-        pbar.close()
+        copy_with_progress(image, target, progress_bars[target])
     except Exception as e:
-        print(f"{target} ERROR: {str(e)}", file=sys.stderr)
+        with lock:
+            tqdm.write(f"{target} ERROR: {str(e)}", file=sys.stderr)
+    return 0
 
 def main(stdscr, image, targets):
     curses.curs_set(0)  # Hide cursor
-    total_size = os.path.getsize(image)
+    lock = threading.Lock()
+    progress_bars = {}
     
-    args = [(image, target, total_size) for target in targets]
+    for idx, target in enumerate(targets):
+        progress_bars[target] = tqdm(total=100, position=idx, leave=True, unit='B', unit_scale=True, desc=target)
+    
+    threads = []
+    results = {}
 
-    with Pool(processes=min(len(targets), os.cpu_count())) as pool:
-        pool.starmap(clone_drive, args)
+    for target in targets:
+        thread = threading.Thread(target=lambda: results.update({target: clone_drive(image, target, progress_bars, lock)}))
+        threads.append(thread)
+        thread.start()
+    
+    for thread in threads:
+        thread.join()
+    
+    for target, result in results.items():
+        if result != 0:
+            tqdm.write(f"{target} finished with errors", file=sys.stderr)
+        progress_bars[target].close()
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
