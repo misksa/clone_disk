@@ -29,7 +29,7 @@ def print_stream(stream, target, progress_bars, lock, is_stdout):
                 tqdm.write(f"{target} ERROR: {line.strip()}", file=sys.stderr)
 
 def clone_drive(image, target, progress_bars, lock):
-    cmd = f"pv {image} | sudo dd of={target} bs=128M iflag=fullblock oflag=direct status=none"
+    cmd = f"pv {image} | sudo dd of={target} bs=16M iflag=fullblock oflag=direct status=none"
     run_command(cmd, target, progress_bars, lock)
 
 def main(stdscr, image, targets):
