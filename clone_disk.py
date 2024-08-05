@@ -7,16 +7,14 @@ from tqdm import tqdm
 
 def get_usb_devices():
     devices = []
-    lsblk_result = subprocess.run(['lsblk', '-o', 'NAME,TYPE'], stdout=subprocess.PIPE, text=True)
+    lsblk_result = subprocess.run(['lsblk', '-o', 'NAME,TYPE,MODEL'], stdout=subprocess.PIPE, text=True)
     for line in lsblk_result.stdout.split('\n')[1:]:
         parts = line.split()
-        if len(parts) >= 2:
-            name, dtype = parts[:2]
-            if dtype == 'disk' and name.startswith('sd'):
+        if len(parts) >= 3:
+            name, dtype, model = parts[:3]
+            if dtype == 'disk' and name.startswith('sd') and 'USB' in model:
                 device_path = f"/dev/{name}"
-                udevadm_result = subprocess.run(['udevadm', 'info', '--query=property', '--name', device_path], stdout=subprocess.PIPE, text=True)
-                if 'ID_BUS=usb' in udevadm_result.stdout:
-                    devices.append(device_path)
+                devices.append(device_path)
     return devices
 
 def run_command(cmd, target, progress_bars, lock):
