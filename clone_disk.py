@@ -1,39 +1,35 @@
 import os
 import sys
-import asyncio
 import subprocess
+import threading
 
-async def read_stream(stream, target, is_stdout=True):
-    while True:
-        line = await stream.readline()
-        if not line:
-            break
+def run_command(cmd, target):
+    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1, universal_newlines=True)
+    with process.stdout, process.stderr:
+        threading.Thread(target=print_stream, args=(process.stdout, target, True)).start()
+        threading.Thread(target=print_stream, args=(process.stderr, target, False)).start()
+    process.wait()
+
+def print_stream(stream, target, is_stdout):
+    for line in iter(stream.readline, ''):
         if is_stdout:
-            print(f"{target}: {line.decode().strip()}")
+            print(f"{target}: {line.strip()}")
         else:
-            print(f"{target} ERROR: {line.decode().strip()}", file=sys.stderr)
+            print(f"{target} ERROR: {line.strip()}", file=sys.stderr)
 
-async def run_command(cmd, target):
-    process = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
+def clone_drive(image, target):
+    cmd = f"pv {image} | sudo dd of={target} bs=128M iflag=fullblock oflag=direct status=progress"
+    run_command(cmd, target)
 
-    await asyncio.gather(
-        read_stream(process.stdout, target),
-        read_stream(process.stderr, target, is_stdout=False)
-    )
-
-    await process.wait()
-
-async def clone_drive(image, target):
-    cmd = ["sh", "-c", f"pv {image} | sudo dd of={target} bs=128M iflag=fullblock oflag=direct status=progress"]
-    await run_command(cmd, target)
-
-async def main(image, targets):
-    tasks = [clone_drive(image, target) for target in targets]
-    await asyncio.gather(*tasks)
+def main(image, targets):
+    threads = []
+    for target in targets:
+        thread = threading.Thread(target=clone_drive, args=(image, target))
+        threads.append(thread)
+        thread.start()
+    
+    for thread in threads:
+        thread.join()
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
@@ -47,4 +43,4 @@ if __name__ == "__main__":
         print(f"Image file {image} not found")
         sys.exit(1)
 
-    asyncio.run(main(image, targets))
+    main(image, targets)
