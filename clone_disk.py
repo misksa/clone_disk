@@ -29,21 +29,18 @@ def run_command(cmd, target, progress_bars, lock):
 
 def print_stream(stream, target, progress_bars, lock, is_stdout):
     for line in iter(stream.readline, ''):
-        if is_stdout:
-            tqdm.write(f"{target}: {line.strip()}", file=sys.stdout)
-        else:
-            with lock:
-                if "%" in line:
-                    try:
-                        percent = int(line.split()[1].replace("%", ""))
-                        total_bytes = progress_bars[target].total
-                        copied_bytes = int(total_bytes * percent / 100)
-                        progress_bars[target].n = copied_bytes
-                        progress_bars[target].refresh()
-                    except ValueError:
-                        pass
-                elif line.strip():  # Ensure the line is not empty
-                    tqdm.write(f"{target} ERROR: {line.strip()}", file=sys.stderr)
+        with lock:
+            if "%" in line:
+                try:
+                    percent = int(line.split()[1].replace("%", ""))
+                    progress_bars[target].n = percent
+                    progress_bars[target].refresh()
+                except (ValueError, IndexError):
+                    pass
+            elif is_stdout:
+                tqdm.write(f"{target}: {line.strip()}", file=sys.stdout)
+            elif line.strip():
+                tqdm.write(f"{target} ERROR: {line.strip()}", file=sys.stderr)
 
 def clone_drive(image, target, progress_bars, lock):
     cmd = f"sudo partclone.dd -s {image} -o {target} -N -f 1"
@@ -56,7 +53,7 @@ def main(stdscr, image, targets):
     progress_bars = {}
     
     for idx, target in enumerate(targets):
-        progress_bars[target] = tqdm(total=os.path.getsize(image), position=idx, leave=True, unit='B', unit_scale=True, desc=target)
+        progress_bars[target] = tqdm(total=100, position=idx, leave=True, desc=target)
     
     threads = []
     results = {}
