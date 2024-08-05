@@ -6,8 +6,12 @@ import threading
 def run_command(cmd, target):
     process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1, universal_newlines=True)
     with process.stdout, process.stderr:
-        threading.Thread(target=print_stream, args=(process.stdout, target, True)).start()
-        threading.Thread(target=print_stream, args=(process.stderr, target, False)).start()
+        stdout_thread = threading.Thread(target=print_stream, args=(process.stdout, target, True))
+        stderr_thread = threading.Thread(target=print_stream, args=(process.stderr, target, False))
+        stdout_thread.start()
+        stderr_thread.start()
+        stdout_thread.join()
+        stderr_thread.join()
     process.wait()
 
 def print_stream(stream, target, is_stdout):
