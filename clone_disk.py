@@ -33,10 +33,10 @@ def print_stream(stream, target, progress_bars, lock, is_stdout):
             tqdm.write(f"{target}: {line.strip()}", file=sys.stdout)
         else:
             with lock:
-                if "bytes" in line and "copied" in line:
+                if "s" in line and "Bytes" in line:
                     parts = line.split()
-                    copied_bytes = int(parts[0])
-                    progress_bars[target].update(copied_bytes - progress_bars[target].n)
+                    copied_bytes = int(parts[1])
+                    progress_bars[target].n = copied_bytes
                     progress_bars[target].refresh()
                 elif line.strip():  # Ensure the line is not empty
                     tqdm.write(f"{target} ERROR: {line.strip()}", file=sys.stderr)
