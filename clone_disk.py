@@ -14,7 +14,7 @@ def run_command(cmd, target, progress_bars, lock):
         stderr_thread.start()
         stdout_thread.join()
         stderr_thread.join()
-    process.wait()
+    return process.wait()
 
 def print_stream(stream, target, progress_bars, lock, is_stdout):
     for line in iter(stream.readline, ''):
@@ -27,12 +27,12 @@ def print_stream(stream, target, progress_bars, lock, is_stdout):
                     copied_bytes = int(parts[0])
                     progress_bars[target].n = copied_bytes
                     progress_bars[target].refresh()
-                elif "dd:" not in line:  # Ignore non-critical stderr messages from dd
+                elif line.strip():  # Ensure the line is not empty
                     tqdm.write(f"{target} ERROR: {line.strip()}", file=sys.stderr)
 
 def clone_drive(image, target, progress_bars, lock):
-    cmd = f"pv -pterb {image} | sudo dd of={target} bs=64M iflag=fullblock oflag=direct status=progress"
-    run_command(cmd, target, progress_bars, lock)
+    cmd = f"pv -pterb {image} | sudo dd of={target} bs=64M iflag=fullblock oflag=direct status=none"
+    return run_command(cmd, target, progress_bars, lock)
 
 def main(stdscr, image, targets):
     curses.curs_set(0)  # Hide cursor
@@ -44,16 +44,20 @@ def main(stdscr, image, targets):
         progress_bars[target] = tqdm(total=os.path.getsize(image), position=idx, leave=True, unit='B', unit_scale=True, desc=target)
     
     threads = []
+    results = {}
+
     for target in targets:
-        thread = threading.Thread(target=clone_drive, args=(image, target, progress_bars, lock))
+        thread = threading.Thread(target=lambda: results.update({target: clone_drive(image, target, progress_bars, lock)}))
         threads.append(thread)
         thread.start()
     
     for thread in threads:
         thread.join()
     
-    for bar in progress_bars.values():
-        bar.close()
+    for target, result in results.items():
+        if result != 0:
+            tqdm.write(f"{target} finished with errors", file=sys.stderr)
+        progress_bars[target].close()
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
