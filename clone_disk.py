@@ -16,13 +16,10 @@ def run_command(cmd, target):
 
 def print_stream(stream, target, is_stdout):
     for line in iter(stream.readline, ''):
-        if is_stdout:
-            print(f"{target}: {line.strip()}")
-        else:
-            print(f"{target} ERROR: {line.strip()}", file=sys.stderr)
+        print(f"{target} {line.strip()}", file=sys.stderr)
 
 def clone_drive(image, target):
-    cmd = f"pv {image} | sudo dd of={target} bs=128M iflag=fullblock oflag=direct status=progress"
+    cmd = f"pv {image} | sudo dd of={target} bs=16M iflag=fullblock oflag=direct status=progress"
     run_command(cmd, target)
 
 def main(image, targets):
