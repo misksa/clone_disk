@@ -2,8 +2,9 @@ import os
 import sys
 import subprocess
 import threading
-import curses
+import shutil
 from tqdm import tqdm
+import curses
 
 def get_usb_devices():
     devices = []
@@ -16,36 +17,29 @@ def get_usb_devices():
                 devices.append(f"/dev/{name}")
     return devices
 
-def run_command(cmd, target, progress_bars, lock):
-    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1, universal_newlines=True)
-    with process.stdout, process.stderr:
-        stdout_thread = threading.Thread(target=print_stream, args=(process.stdout, target, progress_bars, lock, True))
-        stderr_thread = threading.Thread(target=print_stream, args=(process.stderr, target, progress_bars, lock, False))
-        stdout_thread.start()
-        stderr_thread.start()
-        stdout_thread.join()
-        stderr_thread.join()
-    return process.wait()
+def copy_with_progress(src, dst, progress_bar):
+    total_size = os.path.getsize(src)
+    progress_bar.reset(total=total_size)
 
-def print_stream(stream, target, progress_bars, lock, is_stdout):
-    for line in iter(stream.readline, ''):
-        with lock:
-            if "percent" in line:
-                try:
-                    percent = int(line.split()[1].replace("%", ""))
-                    progress_bars[target].n = percent
-                    progress_bars[target].refresh()
-                except (ValueError, IndexError):
-                    pass
-            elif is_stdout:
-                tqdm.write(f"{target}: {line.strip()}", file=sys.stdout)
-            elif line.strip():
-                tqdm.write(f"{target} ERROR: {line.strip()}", file=sys.stderr)
+    with open(src, 'rb') as fsrc, open(dst, 'wb') as fdst:
+        copied = 0
+        while True:
+            buf = fsrc.read(1024 * 1024)
+            if not buf:
+                break
+            fdst.write(buf)
+            copied += len(buf)
+            progress_bar.update(len(buf))
+    progress_bar.n = total_size
+    progress_bar.refresh()
 
 def clone_drive(image, target, progress_bars, lock):
-    cmd = f"sudo partclone.dd -s {image} -o {target} -N -f 1"
-    print(f"Running command: {cmd}")  # Debug output
-    return run_command(cmd, target, progress_bars, lock)
+    try:
+        copy_with_progress(image, target, progress_bars[target])
+    except Exception as e:
+        with lock:
+            tqdm.write(f"{target} ERROR: {str(e)}", file=sys.stderr)
+    return 0
 
 def main(stdscr, image, targets):
     curses.curs_set(0)  # Hide cursor
@@ -53,7 +47,7 @@ def main(stdscr, image, targets):
     progress_bars = {}
     
     for idx, target in enumerate(targets):
-        progress_bars[target] = tqdm(total=100, position=idx, leave=True, desc=target)
+        progress_bars[target] = tqdm(total=100, position=idx, leave=True, unit='B', unit_scale=True, desc=target)
     
     threads = []
     results = {}
