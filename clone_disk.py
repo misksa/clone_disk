@@ -5,45 +5,45 @@ import threading
 import curses
 from tqdm import tqdm
 
-def run_command(cmd, target, progress_bars, screen, lock):
+def run_command(cmd, target, progress_bars, lock):
     process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1, universal_newlines=True)
     with process.stdout, process.stderr:
-        stdout_thread = threading.Thread(target=print_stream, args=(process.stdout, target, progress_bars, screen, lock, True))
-        stderr_thread = threading.Thread(target=print_stream, args=(process.stderr, target, progress_bars, screen, lock, False))
+        stdout_thread = threading.Thread(target=print_stream, args=(process.stdout, target, progress_bars, lock, True))
+        stderr_thread = threading.Thread(target=print_stream, args=(process.stderr, target, progress_bars, lock, False))
         stdout_thread.start()
         stderr_thread.start()
         stdout_thread.join()
         stderr_thread.join()
     process.wait()
 
-def print_stream(stream, target, progress_bars, screen, lock, is_stdout):
+def print_stream(stream, target, progress_bars, lock, is_stdout):
     for line in iter(stream.readline, ''):
-        if is_stdout and "s" in line:
-            progress = line.split("s")[1].strip()
-            with lock:
-                progress_bars[target].n = int(progress.split()[0])
-                progress_bars[target].refresh()
+        if is_stdout:
+            if "bytes" in line:
+                parts = line.split()
+                copied_bytes = int(parts[0])
+                with lock:
+                    progress_bars[target].update(copied_bytes - progress_bars[target].n)
         else:
             with lock:
-                screen.addstr(f"{target} ERROR: {line.strip()}\n")
-                screen.refresh()
+                tqdm.write(f"{target} ERROR: {line.strip()}", file=sys.stderr)
 
-def clone_drive(image, target, progress_bars, screen, lock):
-    cmd = f"pv {image} | sudo dd of={target} bs=16M iflag=fullblock oflag=direct status=progress"
-    run_command(cmd, target, progress_bars, screen, lock)
+def clone_drive(image, target, progress_bars, lock):
+    cmd = f"pv {image} | sudo dd of={target} bs=128M iflag=fullblock oflag=direct status=none"
+    run_command(cmd, target, progress_bars, lock)
 
-def main(screen, image, targets):
-    progress_bars = {}
+def main(stdscr, image, targets):
+    curses.curs_set(0)  # Hide cursor
     lock = threading.Lock()
+    progress_bars = {}
     max_len = max(len(t) for t in targets)
     
     for idx, target in enumerate(targets):
-        screen.addstr(idx, 0, f"Cloning {target}:")
-        progress_bars[target] = tqdm(total=100, position=idx + 1, bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]')
+        progress_bars[target] = tqdm(total=os.path.getsize(image), position=idx, leave=True, unit='B', unit_scale=True, desc=target)
     
     threads = []
     for target in targets:
-        thread = threading.Thread(target=clone_drive, args=(image, target, progress_bars, screen, lock))
+        thread = threading.Thread(target=clone_drive, args=(image, target, progress_bars, lock))
         threads.append(thread)
         thread.start()
     
