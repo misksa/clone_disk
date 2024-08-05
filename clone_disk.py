@@ -6,14 +6,17 @@ import curses
 from tqdm import tqdm
 
 def get_usb_devices():
-    result = subprocess.run(['lsblk', '-o', 'NAME,MODEL,SIZE,TYPE'], stdout=subprocess.PIPE, text=True)
     devices = []
-    for line in result.stdout.split('\n')[1:]:
+    lsblk_result = subprocess.run(['lsblk', '-o', 'NAME,TYPE'], stdout=subprocess.PIPE, text=True)
+    for line in lsblk_result.stdout.split('\n')[1:]:
         parts = line.split()
-        if len(parts) >= 4:
-            name, model, size, dtype = parts[:4]
+        if len(parts) >= 2:
+            name, dtype = parts[:2]
             if dtype == 'disk' and name.startswith('sd'):
-                devices.append(f"/dev/{name}")
+                device_path = f"/dev/{name}"
+                udevadm_result = subprocess.run(['udevadm', 'info', '--query=property', '--name', device_path], stdout=subprocess.PIPE, text=True)
+                if 'ID_BUS=usb' in udevadm_result.stdout:
+                    devices.append(device_path)
     return devices
 
 def run_command(cmd, target, progress_bars, lock):
@@ -43,6 +46,7 @@ def print_stream(stream, target, progress_bars, lock, is_stdout):
 
 def clone_drive(image, target, progress_bars, lock):
     cmd = f"sudo partclone.dd -s {image} -o {target} -b -N"
+    print(f"Running command: {cmd}")  # Debug output
     return run_command(cmd, target, progress_bars, lock)
 
 def main(stdscr, image, targets):
