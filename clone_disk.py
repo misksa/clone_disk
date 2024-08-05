@@ -19,17 +19,17 @@ def run_command(cmd, target, progress_bars, lock):
 def print_stream(stream, target, progress_bars, lock, is_stdout):
     for line in iter(stream.readline, ''):
         if is_stdout:
-            if "bytes" in line:
-                parts = line.split()
-                copied_bytes = int(parts[0])
-                with lock:
+            with lock:
+                if "bytes" in line and "copied" in line:
+                    parts = line.split()
+                    copied_bytes = int(parts[0])
                     progress_bars[target].update(copied_bytes - progress_bars[target].n)
         else:
             with lock:
                 tqdm.write(f"{target} ERROR: {line.strip()}", file=sys.stderr)
 
 def clone_drive(image, target, progress_bars, lock):
-    cmd = f"pv {image} | sudo dd of={target} bs=16M iflag=fullblock oflag=direct status=none"
+    cmd = f"pv {image} | sudo dd of={target} bs=16M iflag=fullblock oflag=direct status=progress"
     run_command(cmd, target, progress_bars, lock)
 
 def main(stdscr, image, targets):
