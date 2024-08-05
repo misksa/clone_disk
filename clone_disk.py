@@ -30,7 +30,7 @@ def run_command(cmd, target, progress_bars, lock):
 def print_stream(stream, target, progress_bars, lock, is_stdout):
     for line in iter(stream.readline, ''):
         with lock:
-            if "%" in line:
+            if "percent" in line:
                 try:
                     percent = int(line.split()[1].replace("%", ""))
                     progress_bars[target].n = percent
