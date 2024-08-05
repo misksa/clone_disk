@@ -34,17 +34,14 @@ def print_stream(stream, target, progress_bars, lock, is_stdout):
         else:
             with lock:
                 if "%" in line:
-                    parts = line.split()
-                    for part in parts:
-                        if "%" in part:
-                            try:
-                                percent = int(part.replace("%", ""))
-                                total_bytes = progress_bars[target].total
-                                copied_bytes = int(total_bytes * percent / 100)
-                                progress_bars[target].n = copied_bytes
-                                progress_bars[target].refresh()
-                            except ValueError:
-                                pass
+                    try:
+                        percent = int(line.split()[1].replace("%", ""))
+                        total_bytes = progress_bars[target].total
+                        copied_bytes = int(total_bytes * percent / 100)
+                        progress_bars[target].n = copied_bytes
+                        progress_bars[target].refresh()
+                    except ValueError:
+                        pass
                 elif line.strip():  # Ensure the line is not empty
                     tqdm.write(f"{target} ERROR: {line.strip()}", file=sys.stderr)
 
