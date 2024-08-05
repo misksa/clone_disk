@@ -2,7 +2,7 @@ import os
 import sys
 import subprocess
 import threading
-import shutil
+from multiprocessing import cpu_count, Pool
 from tqdm import tqdm
 import curses
 
@@ -17,14 +17,14 @@ def get_usb_devices():
                 devices.append(f"/dev/{name}")
     return devices
 
-def copy_with_progress(src, dst, progress_bar):
+def copy_with_progress(src, dst, progress_bar, buf_size=1024*1024*16):
     total_size = os.path.getsize(src)
     progress_bar.reset(total=total_size)
 
     with open(src, 'rb') as fsrc, open(dst, 'wb') as fdst:
         copied = 0
         while True:
-            buf = fsrc.read(1024 * 1024)
+            buf = fsrc.read(buf_size)
             if not buf:
                 break
             fdst.write(buf)
@@ -33,7 +33,8 @@ def copy_with_progress(src, dst, progress_bar):
     progress_bar.n = total_size
     progress_bar.refresh()
 
-def clone_drive(image, target, progress_bars, lock):
+def clone_drive(args):
+    image, target, progress_bars, lock = args
     try:
         copy_with_progress(image, target, progress_bars[target])
     except Exception as e:
@@ -49,20 +50,14 @@ def main(stdscr, image, targets):
     for idx, target in enumerate(targets):
         progress_bars[target] = tqdm(total=100, position=idx, leave=True, unit='B', unit_scale=True, desc=target)
     
-    threads = []
-    results = {}
+    # Используем multiprocessing Pool для параллельного клонирования
+    pool = Pool(processes=min(cpu_count(), len(targets)))
+    args = [(image, target, progress_bars, lock) for target in targets]
+    pool.map(clone_drive, args)
+    pool.close()
+    pool.join()
 
     for target in targets:
-        thread = threading.Thread(target=lambda: results.update({target: clone_drive(image, target, progress_bars, lock)}))
-        threads.append(thread)
-        thread.start()
-    
-    for thread in threads:
-        thread.join()
-    
-    for target, result in results.items():
-        if result != 0:
-            tqdm.write(f"{target} finished with errors", file=sys.stderr)
         progress_bars[target].close()
 
 if __name__ == "__main__":
