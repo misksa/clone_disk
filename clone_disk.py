@@ -42,7 +42,7 @@ def print_stream(stream, target, progress_bars, lock, is_stdout):
                     tqdm.write(f"{target} ERROR: {line.strip()}", file=sys.stderr)
 
 def clone_drive(image, target, progress_bars, lock):
-    cmd = f"sudo partclone.dd -s {image} -o {target} -b -N"
+    cmd = f"sudo partclone.dd -s {image} -o {target} -N -f 1"
     print(f"Running command: {cmd}")  # Debug output
     return run_command(cmd, target, progress_bars, lock)
 
