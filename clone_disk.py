@@ -5,6 +5,18 @@ import threading
 import curses
 from tqdm import tqdm
 
+def get_device_info():
+    result = subprocess.run(['lsblk', '-o', 'NAME,SERIAL,MODEL,VENDOR'], stdout=subprocess.PIPE, text=True)
+    devices = {}
+    for line in result.stdout.split('\n')[1:]:
+        parts = line.split()
+        if len(parts) >= 2:
+            device = f"/dev/{parts[0]}"
+            serial = parts[1]
+            model = ' '.join(parts[2:])
+            devices[device] = (serial, model)
+    return devices
+
 def run_command(cmd, target, progress_bars, lock):
     process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1, universal_newlines=True)
     with process.stdout, process.stderr:
@@ -38,10 +50,10 @@ def main(stdscr, image, targets):
     curses.curs_set(0)  # Hide cursor
     lock = threading.Lock()
     progress_bars = {}
-    max_len = max(len(t) for t in targets)
+    device_info = get_device_info()
     
     for idx, target in enumerate(targets):
-        progress_bars[target] = tqdm(total=os.path.getsize(image), position=idx, leave=True, unit='B', unit_scale=True, desc=target)
+        progress_bars[target] = tqdm(total=os.path.getsize(image), position=idx, leave=True, unit='B', unit_scale=True, desc=f"{target} ({device_info[target][1]} {device_info[target][0]})")
     
     threads = []
     results = {}
@@ -56,7 +68,7 @@ def main(stdscr, image, targets):
     
     for target, result in results.items():
         if result != 0:
-            tqdm.write(f"{target} finished with errors", file=sys.stderr)
+            tqdm.write(f"{target} ({device_info[target][1]} {device_info[target][0]}) finished with errors", file=sys.stderr)
         progress_bars[target].close()
 
 if __name__ == "__main__":
