@@ -5,16 +5,15 @@ import threading
 import curses
 from tqdm import tqdm
 
-def get_device_info():
-    result = subprocess.run(['lsblk', '-o', 'NAME,SERIAL,MODEL,VENDOR'], stdout=subprocess.PIPE, text=True)
-    devices = {}
+def get_usb_devices():
+    result = subprocess.run(['lsblk', '-o', 'NAME,MODEL,SIZE,TYPE'], stdout=subprocess.PIPE, text=True)
+    devices = []
     for line in result.stdout.split('\n')[1:]:
         parts = line.split()
-        if len(parts) >= 2:
-            device = f"/dev/{parts[0]}"
-            serial = parts[1]
-            model = ' '.join(parts[2:])
-            devices[device] = (serial, model)
+        if len(parts) >= 4:
+            name, model, size, dtype = parts[:4]
+            if dtype == 'disk' and name.startswith('sd'):
+                devices.append(f"/dev/{name}")
     return devices
 
 def run_command(cmd, target, progress_bars, lock):
@@ -43,17 +42,16 @@ def print_stream(stream, target, progress_bars, lock, is_stdout):
                     tqdm.write(f"{target} ERROR: {line.strip()}", file=sys.stderr)
 
 def clone_drive(image, target, progress_bars, lock):
-    cmd = f"pv -pterb {image} | sudo dd of={target} bs=8M iflag=fullblock oflag=direct status=progress"
+    cmd = f"sudo partclone.dd -s {image} -o {target} -b -N"
     return run_command(cmd, target, progress_bars, lock)
 
 def main(stdscr, image, targets):
     curses.curs_set(0)  # Hide cursor
     lock = threading.Lock()
     progress_bars = {}
-    device_info = get_device_info()
     
     for idx, target in enumerate(targets):
-        progress_bars[target] = tqdm(total=os.path.getsize(image), position=idx, leave=True, unit='B', unit_scale=True, desc=f"{target} ({device_info[target][1]} {device_info[target][0]})")
+        progress_bars[target] = tqdm(total=os.path.getsize(image), position=idx, leave=True, unit='B', unit_scale=True, desc=target)
     
     threads = []
     results = {}
@@ -68,19 +66,24 @@ def main(stdscr, image, targets):
     
     for target, result in results.items():
         if result != 0:
-            tqdm.write(f"{target} ({device_info[target][1]} {device_info[target][0]}) finished with errors", file=sys.stderr)
+            tqdm.write(f"{target} finished with errors", file=sys.stderr)
         progress_bars[target].close()
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print("Usage: python clone_drives.py /path/to/image.img /dev/sdY /dev/sdZ /dev/sdA")
+    if len(sys.argv) < 2:
+        print("Usage: python clone_drives.py /path/to/image.img")
         sys.exit(1)
 
     image = sys.argv[1]
-    targets = sys.argv[2:]
 
     if not os.path.isfile(image):
         print(f"Image file {image} not found")
         sys.exit(1)
 
+    targets = get_usb_devices()
+    if not targets:
+        print("No USB flash drives found")
+        sys.exit(1)
+
+    print(f"Found USB devices: {targets}")
     curses.wrapper(main, image, targets)
